@@ -1,33 +1,21 @@
-import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import {
-    addDummyDbItems,
-    addDbItem,
-    getAllDbItems,
-    getDbItemById,
-    DbItem,
-    updateDbItemById,
-} from "./db";
+import express from "express";
+import { Client } from "pg";
+import { getDbItemById } from "./db";
 import filePath from "./filePath";
-
-// loading in some dummy items into the database
-// (comment out if desired, or change the number)
-addDummyDbItems(20);
+dotenv.config();
 
 const app = express();
 
-/** Parses JSON data in a request automatically */
 app.use(express.json());
-/** To allow 'Cross-Origin Resource Sharing': https://en.wikipedia.org/wiki/Cross-origin_resource_sharing */
 app.use(cors());
 
-// read in contents of any environment variables in the .env file
-// Must be done BEFORE trying to access process.env...
-dotenv.config();
-
-// use the environment variable PORT, or 4000 as a fallback
 const PORT_NUMBER = process.env.PORT ?? 4000;
+const dbUrl = process.env.DATABASE_URL;
+
+const client = new Client(dbUrl);
+client.connect();
 
 // API info page
 app.get("/", (req, res) => {
@@ -35,47 +23,55 @@ app.get("/", (req, res) => {
     res.sendFile(pathToFile);
 });
 
-// GET /items
-app.get("/items", (req, res) => {
-    const allSignatures = getAllDbItems();
-    res.status(200).json(allSignatures);
+app.get("/users", async (req, res) => {
+    const queryText = "SELECT username FROM users";
+
+    const users = await client.query(queryText);
+
+    res.status(200).json(users.rows);
 });
 
-// POST /items
-app.post<{}, {}, DbItem>("/items", (req, res) => {
-    // to be rigorous, ought to handle non-conforming request bodies
-    // ... but omitting this as a simplification
-    const postData = req.body;
-    const createdSignature = addDbItem(postData);
-    res.status(201).json(createdSignature);
+app.get("/hello", async (req, res) => {
+    await res.status(200).json({ hello: "hello" });
 });
 
-// GET /items/:id
+app.get("/leaderboard", async (req, res) => {
+    const queryText =
+        "SELECT * FROM leaderboard JOIN users ON leaderboard.user_id = users.id ORDER BY score_section_1 DESC, score_section_2 DESC LIMIT 10;";
+    const leaderboard = await client.query(queryText);
+    res.status(200).json(leaderboard.rows);
+});
+
+app.post("/leaderboard", async (req, res) => {
+    const checkUserQuery = "SELECT id FROM users WHERE username = $1;";
+    const userQuery =
+        "INSERT INTO users (username) VALUES ($1) ON CONFLICT (username) DO NOTHING RETURNING id ;";
+    const leaderQuery =
+        "INSERT INTO leaderboard (user_id, score_section_1, score_section_2) values($1, $2, $3) RETURNING *";
+
+    let userId;
+
+    const { username, score_section_1, score_section_2 } = req.body;
+    const userValues = [username];
+    const userCheck = await client.query(checkUserQuery, userValues);
+
+    if (userCheck.rowCount > 0) {
+        userId = userCheck.rows[0].id;
+    } else {
+        const userResult = await client.query(userQuery, userValues);
+        userId = userResult.rows[0].id;
+    }
+
+    console.log(userId);
+
+    const leaderboardValues = [userId, score_section_1, score_section_2];
+    const result = await client.query(leaderQuery, leaderboardValues);
+
+    res.status(201).json(result.rows);
+});
+
 app.get<{ id: string }>("/items/:id", (req, res) => {
     const matchingSignature = getDbItemById(parseInt(req.params.id));
-    if (matchingSignature === "not found") {
-        res.status(404).json(matchingSignature);
-    } else {
-        res.status(200).json(matchingSignature);
-    }
-});
-
-// DELETE /items/:id
-app.delete<{ id: string }>("/items/:id", (req, res) => {
-    const matchingSignature = getDbItemById(parseInt(req.params.id));
-    if (matchingSignature === "not found") {
-        res.status(404).json(matchingSignature);
-    } else {
-        res.status(200).json(matchingSignature);
-    }
-});
-
-// PATCH /items/:id
-app.patch<{ id: string }, {}, Partial<DbItem>>("/items/:id", (req, res) => {
-    const matchingSignature = updateDbItemById(
-        parseInt(req.params.id),
-        req.body
-    );
     if (matchingSignature === "not found") {
         res.status(404).json(matchingSignature);
     } else {
