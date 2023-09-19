@@ -19,10 +19,7 @@ const io = new Server(overallServer, {
     cors: {
         origin: "*",
     },
-    transports: ["websocket", "polling"],
 });
-
-console.log;
 
 dotenv.config();
 
@@ -78,13 +75,11 @@ app.post("/leaderboard", async (req, res) => {
         userId = userResult.rows[0].id;
     }
 
-    console.log(userId);
-
     const leaderboardValues = [userId, score_section_1, score_section_2];
     const result = await client.query(leaderQuery, leaderboardValues);
 
-    io.emit("new-score", result.rows[0]);
-    console.log("test");
+    io.emit("new-score", { data: result.rows[0], name: userValues });
+
     res.status(201).json(result.rows);
 });
 
@@ -97,6 +92,6 @@ app.get<{ id: string }>("/items/:id", (req, res) => {
     }
 });
 
-app.listen(PORT_NUMBER, () => {
+overallServer.listen(PORT_NUMBER, () => {
     console.log(`Server is listening on port ${PORT_NUMBER}!`);
 });
