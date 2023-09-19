@@ -4,14 +4,29 @@ import express from "express";
 import { Client } from "pg";
 import { getDbItemById } from "./db";
 import filePath from "./filePath";
-dotenv.config();
 
 const app = express();
 
 app.use(express.json());
 app.use(cors());
 
-const PORT_NUMBER = process.env.PORT ?? 4000;
+import { Server } from "socket.io";
+import * as http from "http";
+
+const overallServer = http.createServer(app);
+
+const io = new Server(overallServer, {
+    cors: {
+        origin: "*",
+    },
+    transports: ["websocket", "polling"],
+});
+
+console.log;
+
+dotenv.config();
+
+const PORT_NUMBER = process.env.PORT ?? 5000;
 const dbUrl = process.env.DATABASE_URL;
 
 const client = new Client(dbUrl);
@@ -39,6 +54,7 @@ app.get("/leaderboard", async (req, res) => {
     const queryText =
         "SELECT * FROM leaderboard JOIN users ON leaderboard.user_id = users.id ORDER BY score_section_1 DESC, score_section_2 DESC LIMIT 10;";
     const leaderboard = await client.query(queryText);
+
     res.status(200).json(leaderboard.rows);
 });
 
@@ -67,6 +83,8 @@ app.post("/leaderboard", async (req, res) => {
     const leaderboardValues = [userId, score_section_1, score_section_2];
     const result = await client.query(leaderQuery, leaderboardValues);
 
+    io.emit("new-score", result.rows[0]);
+    console.log("test");
     res.status(201).json(result.rows);
 });
 
